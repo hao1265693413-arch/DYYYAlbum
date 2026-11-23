@@ -240,7 +240,7 @@ static void DDShowPickerSheet(void (^proceed)(BOOL)) {
                                                 }]];
     }
 
-    [sheet addAction:[UIAlertAction actionWithTitle:@"最近项目（不加入相簿）"
+    [sheet addAction:[UIAlertAction actionWithTitle:@"最近项目"
                                               style:UIAlertActionStyleDefault
                                             handler:^(UIAlertAction *action) {
                                               DDSetPendingAlbum(nil, nil);
@@ -270,6 +270,43 @@ static void DDShowPickerSheet(void (^proceed)(BOOL)) {
         sheet.popoverPresentationController.permittedArrowDirections = 0;
     }
     [top presentViewController:sheet animated:YES completion:nil];
+
+    // 弹窗未能正常出现（被别的控制器占用等）时兜底，避免下载被永远卡住
+    __weak UIAlertController *weakSheet = sheet;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+                     if (!gPickerShowing) {
+                         return;
+                     }
+                     UIAlertController *s = weakSheet;
+                     if (s && (s.isBeingPresented || s.presentingViewController || s.view.window)) {
+                         return;
+                     }
+                     DDA_LOG(@"相簿弹窗未出现，按最近项目继续");
+                     gPickerShowing = NO;
+                     proceed(YES);
+                   });
+}
+
+static void DDShowPickerNow(void (^proceed)(BOOL)) {
+    PHAuthorizationStatus status =
+        [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelReadWrite];
+    if (status == PHAuthorizationStatusNotDetermined) {
+        [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelReadWrite
+                                                   handler:^(PHAuthorizationStatus newStatus) {
+                                                     dispatch_async(dispatch_get_main_queue(), ^{
+                                                       if (newStatus == PHAuthorizationStatusDenied ||
+                                                           newStatus == PHAuthorizationStatusRestricted) {
+                                                           gPickerShowing = NO;
+                                                           proceed(YES);
+                                                           return;
+                                                       }
+                                                       DDShowPickerSheet(proceed);
+                                                     });
+                                                   }];
+        return;
+    }
+    DDShowPickerSheet(proceed);
 }
 
 static void DDPresentPicker(void (^proceed)(BOOL)) {
@@ -281,24 +318,14 @@ static void DDPresentPicker(void (^proceed)(BOOL)) {
       }
       gPickerShowing = YES;
 
-      PHAuthorizationStatus status =
-          [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelReadWrite];
-      if (status == PHAuthorizationStatusNotDetermined) {
-          [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelReadWrite
-                                                     handler:^(PHAuthorizationStatus newStatus) {
-                                                       dispatch_async(dispatch_get_main_queue(), ^{
-                                                         if (newStatus == PHAuthorizationStatusDenied ||
-                                                             newStatus == PHAuthorizationStatusRestricted) {
-                                                             gPickerShowing = NO;
-                                                             proceed(YES);
-                                                             return;
-                                                         }
-                                                         DDShowPickerSheet(proceed);
-                                                       });
-                                                     }];
-          return;
-      }
-      DDShowPickerSheet(proceed);
+      // 抖音长按面板通常在调用下载后才收起来，稍等一下再弹，避免被面板盖住或一起关掉
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                     dispatch_get_main_queue(), ^{
+                       if (!gPickerShowing) {
+                           return;
+                       }
+                       DDShowPickerNow(proceed);
+                     });
     });
 }
 
@@ -452,14 +479,32 @@ static BOOL DDSessionActive(void) {
     }
 }
 
+static BOOL DDIsAudioURL(NSURL *url) {
+    static NSSet<NSString *> *exts = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+      exts = [NSSet setWithArray:@[ @"mp3", @"m4a", @"aac", @"wav", @"flac", @"ogg", @"caf" ]];
+    });
+    return [exts containsObject:url.pathExtension.lowercaseString];
+}
+
 static void DDLogCancelled(void) {
     DDA_LOG(@"用户取消下载");
 }
 
 static void DDDownloadMedia(id self, SEL _cmd, NSURL *url, NSInteger mediaType, NSURL *audio, id completion) {
+    if (DDIsAudioURL(url)) {
+        if (origDownloadMedia) {
+            origDownloadMedia(self, _cmd, url, mediaType, audio, completion);
+        }
+        return;
+    }
     DDPresentPicker(^(BOOL go) {
       if (!go) {
           DDLogCancelled();
+          if (completion) {
+              ((void (^)(BOOL))completion)(NO);
+          }
           return;
       }
       if (origDownloadMedia) {
@@ -470,6 +515,12 @@ static void DDDownloadMedia(id self, SEL _cmd, NSURL *url, NSInteger mediaType, 
 
 static void DDDownloadMediaProgress(id self, SEL _cmd, NSURL *url, NSInteger mediaType, NSURL *audio,
                                     id progress, id completion) {
+    if (DDIsAudioURL(url)) {
+        if (origDownloadMediaProgress) {
+            origDownloadMediaProgress(self, _cmd, url, mediaType, audio, progress, completion);
+        }
+        return;
+    }
     DDPresentPicker(^(BOOL go) {
       if (!go) {
           DDLogCancelled();
@@ -564,6 +615,9 @@ static void DDSaveMedia(id self, SEL _cmd, NSURL *url, NSInteger mediaType, id c
     DDPresentPicker(^(BOOL go) {
       if (!go) {
           DDLogCancelled();
+          if (completion) {
+              ((void (^)(BOOL))completion)(NO);
+          }
           return;
       }
       if (origSaveMedia) {
@@ -583,6 +637,9 @@ static void DDSaveMediaDesc(id self, SEL _cmd, NSURL *url, NSInteger mediaType, 
     DDPresentPicker(^(BOOL go) {
       if (!go) {
           DDLogCancelled();
+          if (completion) {
+              ((void (^)(BOOL))completion)(NO);
+          }
           return;
       }
       if (origSaveMediaDesc) {
