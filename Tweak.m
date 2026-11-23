@@ -24,6 +24,9 @@ static BOOL gDYYYHooksInstalled = NO;
 @interface DYYYAlbum : NSObject
 @end
 
+@implementation DYYYAlbum
+@end
+
 static NSTimeInterval DDNow(void) {
     return [NSDate timeIntervalSinceReferenceDate];
 }
