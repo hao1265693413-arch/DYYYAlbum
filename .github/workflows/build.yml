@@ -21,7 +21,16 @@ jobs:
       - name: Collect dylib
         run: |
           mkdir -p output
-          find .theos -name 'DYYYAlbum.dylib' -type f -exec cp {} output/ \;
+          cp .theos/obj/arm64/DYYYAlbum.dylib output/arm64.dylib
+          cp .theos/obj/arm64e/DYYYAlbum.dylib output/arm64e.dylib
+          LIPO=""
+          if command -v lipo >/dev/null 2>&1; then LIPO=lipo; fi
+          if [ -z "$LIPO" ] && command -v llvm-lipo >/dev/null 2>&1; then LIPO=llvm-lipo; fi
+          if [ -n "$LIPO" ]; then
+            "$LIPO" -create output/arm64.dylib output/arm64e.dylib -output output/DYYYAlbum.dylib
+          else
+            cp output/arm64.dylib output/DYYYAlbum.dylib
+          fi
           file output/*.dylib
           ls -l output
 
