@@ -1,0 +1,33 @@
+name: Build DYYYAlbum dylib
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build
+        run: make clean all FINALPACKAGE=1
+
+      - name: Collect dylib
+        run: |
+          mkdir -p output
+          find .theos -name 'DYYYAlbum.dylib' -type f -exec cp {} output/ \;
+          file output/*.dylib
+          ls -l output
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DYYYAlbum-dylib
+          path: output/*.dylib
+          if-no-files-found: error
