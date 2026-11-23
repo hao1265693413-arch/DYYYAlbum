@@ -62,10 +62,6 @@ static NSString *DDLastAlbumID(void) {
     return [[NSUserDefaults standardUserDefaults] stringForKey:kLastAlbumIDKey];
 }
 
-static NSString *DDLastAlbumName(void) {
-    return [[NSUserDefaults standardUserDefaults] stringForKey:kLastAlbumNameKey];
-}
-
 #pragma mark - 顶层控制器
 
 static UIViewController *DDTopViewController(void) {
@@ -100,14 +96,6 @@ static UIViewController *DDTopViewController(void) {
         vc = vc.presentedViewController;
     }
     return vc;
-}
-
-static void DDPresentOnTop(UIViewController *vc) {
-    UIViewController *top = DDTopViewController();
-    if (!top || top == vc) {
-        return;
-    }
-    [top presentViewController:vc animated:YES completion:nil];
 }
 
 #pragma mark - 相簿列表
